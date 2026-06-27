@@ -7,32 +7,48 @@ use Illuminate\Support\Facades\Http;
 
 class GameController extends Controller
 {
+    /**
+     * Menampilkan halaman utama form simulasi prediksi rating
+     */
     public function index(Request $request)
     {
-        $gamesResponse = Http::get("http://127.0.0.1:5000/api/games");
-        $allGames = $gamesResponse->successful() ? $gamesResponse->json() : [];
+        // Inisialisasi awal variabel kosong agar Blade tidak error/undefined variable saat pertama dibuka
+        $dataHasil = null;
 
-        $recommendations = [];
-        $selectedInfo = []; 
+        // Ambil data input dari form simulasi (jika ada request masuk)
+        $plays = $request->input('plays');
 
-        $selectedGames = array_filter($request->input('games', []), function($value) {
-            return $value !== null && $value !== '';
-        });
-
-        if (!empty($selectedGames)) {
-            $idString = implode(',', $selectedGames);
+        // Jika user sudah menekan tombol "Prediksi Rating" (ditandai dengan adanya input 'plays')
+        if ($plays !== null) {
+            $playing = $request->input('playing', '0');
+            $backlogs = $request->input('backlogs', '0');
+            $wishlist = $request->input('wishlist', '0');
             
-            $res = Http::get("http://127.0.0.1:5000/api/recommend", [
-                'id' => $idString
-            ]);
+            // Satukan array checkbox genre menjadi string pisahan koma (Contoh: "RPG,Adventure")
+            $genresArray = $request->input('genres', []);
+            $genres = implode(',', $genresArray);
 
-            if ($res->successful()) {
-                $data = $res->json();
-                $recommendations = $data['recommendations'] ?? [];
-                $selectedInfo = $data['selected_info'] ?? []; 
+            try {
+                // Tembak endpoint API Flask baru kita (/api/predict)
+                $res = Http::timeout(10)->get("http://127.0.0.1:5000/api/predict", [
+                    'plays' => $plays,
+                    'playing' => $playing,
+                    'backlogs' => $backlogs,
+                    'wishlist' => $wishlist,
+                    'genres' => $genres
+                ]);
+
+                if ($res->successful()) {
+                    $dataHasil = $res->json();
+                } else {
+                    session()->flash('error', 'Gagal mendapatkan kalkulasi dari server AI.');
+                }
+            } catch (\Exception $e) {
+                session()->flash('error', 'Server AI Python (Flask) belum dijalankan.');
             }
         }
 
-        return view('games.index', compact('allGames', 'recommendations', 'selectedInfo'));
+        // Return ke view games.index sesuai dengan path folder di struktur Laravel-mu
+        return view('games.index', compact('dataHasil'));
     }
 }
